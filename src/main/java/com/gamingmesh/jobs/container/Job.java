@@ -28,6 +28,7 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.function.BiPredicate;
 
+import com.gamingmesh.jobs.dao.JobsDAO;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -151,7 +152,7 @@ public class Job {
     /**
      * Adds specific amount of boost to the given currency type. If there was a boost
      * added before with the same currency type, it will be overridden to the new one.
-     * 
+     *
      * @param type the type of {@link CurrencyType}}
      * @param point the amount of boost to add
      */
@@ -166,7 +167,7 @@ public class Job {
      * <p>
      * The array of integer need at least to contain 3 elements
      * to calculate the time in milliseconds using {@link Calendar}.
-     * 
+     *
      * @param type the type of {@link CurrencyType}}
      * @param point the amount of boost to add
      * @param duration boost duration in seconds
@@ -198,6 +199,27 @@ public class Job {
 
     public BoostMultiplier getBoost() {
         return boost;
+    }
+
+// === Boost persistence methods ===
+
+    public void loadBoostsFromDB(JobsDAO dao) {
+        Map<CurrencyType, BoostData> loadedBoosts = dao.loadJobBoosts(this.jobName);
+        for (Map.Entry<CurrencyType, BoostData> entry : loadedBoosts.entrySet()) {
+            boost.add(entry.getKey(), entry.getValue().getAmount(), entry.getValue().getExpires());
+        }
+    }
+
+    public void saveBoostsToDB(JobsDAO dao) {
+        Map<CurrencyType, BoostData> mapToSave = new EnumMap<>(CurrencyType.class);
+        for (CurrencyType type : CurrencyType.values()) {
+            double amount = boost.get(type);
+            Long expires = boost.getTime(type);
+            if (amount > 0 && expires != null) {
+                mapToSave.put(type, new BoostData(amount, expires));
+            }
+        }
+        dao.saveJobBoosts(this.jobName, mapToSave);
     }
 
     /**

@@ -4,21 +4,14 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import com.gamingmesh.jobs.container.*;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
@@ -26,25 +19,7 @@ import org.bukkit.World;
 import org.bukkit.entity.Player;
 
 import com.gamingmesh.jobs.Jobs;
-import com.gamingmesh.jobs.container.ArchivedJobs;
-import com.gamingmesh.jobs.container.BlockProtection;
-import com.gamingmesh.jobs.container.Convert;
-import com.gamingmesh.jobs.container.CurrencyType;
-import com.gamingmesh.jobs.container.DBAction;
-import com.gamingmesh.jobs.container.ExploreChunk;
-import com.gamingmesh.jobs.container.ExploreRegion;
-import com.gamingmesh.jobs.container.Job;
-import com.gamingmesh.jobs.container.JobProgression;
-import com.gamingmesh.jobs.container.JobsPlayer;
-import com.gamingmesh.jobs.container.JobsQuestTop;
-import com.gamingmesh.jobs.container.JobsTop;
 import com.gamingmesh.jobs.container.JobsTop.topStats;
-import com.gamingmesh.jobs.container.JobsWorld;
-import com.gamingmesh.jobs.container.Log;
-import com.gamingmesh.jobs.container.LogAmounts;
-import com.gamingmesh.jobs.container.PlayerInfo;
-import com.gamingmesh.jobs.container.PlayerPoints;
-import com.gamingmesh.jobs.container.TopList;
 import com.gamingmesh.jobs.dao.JobsManager.DataBaseType;
 import com.gamingmesh.jobs.economy.PaymentData;
 import com.gamingmesh.jobs.stuff.ToggleBarHandling;
@@ -369,6 +344,36 @@ public abstract class JobsDAO {
         }
     }
 
+    public enum BoostsTableFields implements JobsTableInterface {
+        jobName("VARCHAR(100)"),
+        currencyType("VARCHAR(50)"),
+        amount("DOUBLE"),
+        expires("BIGINT");
+
+        private final String type;
+
+        BoostsTableFields(String type) {
+            this.type = type;
+        }
+
+        @Override
+        public String getCollumn() {
+            return name();
+        }
+
+        @Override
+        public String getType() {
+            return type;
+        }
+
+        @Override
+        public boolean isUnique() {
+            // Return true for primary key columns if you want uniqueness constraints,
+            // or false otherwise. Usually handled separately in SQL.
+            return false;
+        }
+    }
+
     public enum DBTables {
         JobNameTable("jobNames",
             "CREATE TABLE IF NOT EXISTS `[tableName]` (`id` int NOT NULL AUTO_INCREMENT PRIMARY KEY[fields]);",
@@ -399,7 +404,10 @@ public abstract class JobsDAO {
             "CREATE TABLE IF NOT EXISTS `[tableName]` (`id` INTEGER PRIMARY KEY AUTOINCREMENT[fields]);", ExploreDataTableFields.class),
         PointsTable("points",
             "CREATE TABLE IF NOT EXISTS `[tableName]` (`id` int NOT NULL AUTO_INCREMENT PRIMARY KEY[fields]);",
-            "CREATE TABLE IF NOT EXISTS `[tableName]` (`id` INTEGER PRIMARY KEY AUTOINCREMENT[fields]);", PointsTableFields.class);
+            "CREATE TABLE IF NOT EXISTS `[tableName]` (`id` INTEGER PRIMARY KEY AUTOINCREMENT[fields]);", PointsTableFields.class),
+        BoostsTable("boosts",
+            "CREATE TABLE IF NOT EXISTS `[tableName]` (`id` int NOT NULL AUTO_INCREMENT PRIMARY KEY[fields]);",
+            "CREATE TABLE IF NOT EXISTS `[tableName]` (`id` INTEGER PRIMARY KEY AUTOINCREMENT[fields]);", BoostsTableFields.class);
 
         private String mySQL;
         private String sQlite;
@@ -2328,6 +2336,49 @@ public abstract class JobsDAO {
             close(prest);
         }
     }
+    // Loads boost data for a job from DB
+    public Map<CurrencyType, BoostData> loadJobBoosts(String jobName) {
+        Map<CurrencyType, BoostData> boosts = new EnumMap<>(CurrencyType.class);
+
+        String query = "SELECT currencyType, amount, expires FROM boosts WHERE jobName = ?";
+
+        try (PreparedStatement ps = getConnection().prepareStatement(query)) {
+            ps.setString(1, jobName);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String currencyName = rs.getString("currencyType");
+                    CurrencyType currencyType = CurrencyType.valueOf(currencyName.toUpperCase());
+                    double amount = rs.getDouble("amount");
+                    long expires = rs.getLong("expires");
+                    boosts.put(currencyType, new BoostData(amount, expires));
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to load boosts for job " + jobName + ": " + e.getMessage());
+        }
+
+        return boosts;
+    }
+
+    // Saves boost data for a job into DB (upsert)
+    public void saveJobBoosts(String jobName, Map<CurrencyType, BoostData> boosts) {
+        String insertOrUpdate =
+                "INSERT INTO boosts (jobName, currencyType, amount, expires) VALUES (?, ?, ?, ?) " +
+                        "ON CONFLICT(jobName, currencyType) DO UPDATE SET amount = excluded.amount, expires = excluded.expires";
+
+        try (PreparedStatement ps = getConnection().prepareStatement(insertOrUpdate)) {
+            for (Map.Entry<CurrencyType, BoostData> entry : boosts.entrySet()) {
+                ps.setString(1, jobName);
+                ps.setString(2, entry.getKey().name());
+                ps.setDouble(3, entry.getValue().getAmount());
+                ps.setLong(4, entry.getValue().getExpires());
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to save boosts for job " + jobName + ": " + e.getMessage());
+        }
+    }
 
     /**
      * Save block protection information
@@ -2697,7 +2748,15 @@ public abstract class JobsDAO {
         }
 
     }
-
+    public void deleteExpiredBoosts() {
+        String sql = "DELETE FROM boosts WHERE expires < ?";
+        try (PreparedStatement st = getConnection().prepareStatement(sql)) {
+            st.setLong(1, System.currentTimeMillis());
+            st.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
     /**
      * Delete player-explore information
      * @param worldName - the world getting removed

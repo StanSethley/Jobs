@@ -8,13 +8,11 @@ public class BoostMultiplier implements Cloneable {
     private final Map<CurrencyType, Double> map = new HashMap<>();
     private final Map<CurrencyType, Long> timers = new HashMap<>();
 
-    @Override
-    public BoostMultiplier clone() {
-        BoostMultiplier boost = new BoostMultiplier();
-        for (CurrencyType type : CurrencyType.values()) {
-            boost.add(type, map.get(type));
+    // Constructors
+    public BoostMultiplier() {
+        for (CurrencyType one : CurrencyType.values()) {
+            this.map.put(one, 0D);
         }
-        return boost;
     }
 
     public BoostMultiplier(Map<CurrencyType, Double> map) {
@@ -23,12 +21,20 @@ public class BoostMultiplier implements Cloneable {
         }
     }
 
-    public BoostMultiplier() {
-        for (CurrencyType one : CurrencyType.values()) {
-            this.map.put(one, 0D);
+    @Override
+    public BoostMultiplier clone() {
+        BoostMultiplier boost = new BoostMultiplier();
+        for (CurrencyType type : CurrencyType.values()) {
+            boost.add(type, this.map.get(type));
+            Long time = this.timers.get(type);
+            if (time != null) {
+                boost.setTime(type, time);
+            }
         }
+        return boost;
     }
 
+    // Add boost without timer
     public BoostMultiplier add(CurrencyType type, double amount) {
         if (!Double.isNaN(amount))
             this.map.put(type, amount);
@@ -36,12 +42,14 @@ public class BoostMultiplier implements Cloneable {
         return this;
     }
 
-    public BoostMultiplier add(CurrencyType type, double amount, long time) {
+    // Add boost with timer
+    public BoostMultiplier add(CurrencyType type, double amount, long expiryTimeMillis) {
         add(type, amount);
-        timers.put(type, time);
+        timers.put(type, expiryTimeMillis);
         return this;
     }
 
+    // Add uniform boost to all types
     public BoostMultiplier add(double amount) {
         if (amount != 0 && !Double.isNaN(amount)) {
             for (CurrencyType one : CurrencyType.values()) {
@@ -49,6 +57,13 @@ public class BoostMultiplier implements Cloneable {
             }
         }
         return this;
+    }
+
+    // Add boost values from another BoostMultiplier
+    public void add(BoostMultiplier other) {
+        for (CurrencyType one : CurrencyType.values()) {
+            this.map.put(one, get(one) + other.get(one));
+        }
     }
 
     public double get(CurrencyType type) {
@@ -61,6 +76,10 @@ public class BoostMultiplier implements Cloneable {
         return timers.get(type);
     }
 
+    public void setTime(CurrencyType type, long expiry) {
+        timers.put(type, expiry);
+    }
+
     public boolean isValid(CurrencyType type) {
         Long time = getTime(type);
         if (time == null)
@@ -71,13 +90,58 @@ public class BoostMultiplier implements Cloneable {
             timers.remove(type);
             return false;
         }
-
         return true;
     }
 
-    public void add(BoostMultiplier armorboost) {
-        for (CurrencyType one : CurrencyType.values()) {
-            map.put(one, get(one) + armorboost.get(one));
+    // ========================
+    // Persistence Utilities
+    // ========================
+
+    // Export boost values (e.g. for file or DB)
+    public Map<String, Double> exportBoosts() {
+        Map<String, Double> export = new HashMap<>();
+        for (Map.Entry<CurrencyType, Double> entry : map.entrySet()) {
+            if (entry.getValue() != null && entry.getValue() != 0) {
+                export.put(entry.getKey().name(), entry.getValue());
+            }
+        }
+        return export;
+    }
+
+    // Export timers (as milliseconds since epoch)
+    public Map<String, Long> exportTimers() {
+        Map<String, Long> export = new HashMap<>();
+        for (Map.Entry<CurrencyType, Long> entry : timers.entrySet()) {
+            if (entry.getValue() != null && entry.getValue() > System.currentTimeMillis()) {
+                export.put(entry.getKey().name(), entry.getValue());
+            }
+        }
+        return export;
+    }
+
+    // Import boost values
+    public void importBoosts(Map<String, Double> imported) {
+        if (imported == null) return;
+        for (Map.Entry<String, Double> entry : imported.entrySet()) {
+            try {
+                CurrencyType type = CurrencyType.valueOf(entry.getKey());
+                this.map.put(type, entry.getValue());
+            } catch (IllegalArgumentException ignored) {}
+        }
+    }
+
+    // Import timers
+    public void importTimers(Map<String, Long> imported) {
+        if (imported == null) return;
+        long now = System.currentTimeMillis();
+        for (Map.Entry<String, Long> entry : imported.entrySet()) {
+            try {
+                CurrencyType type = CurrencyType.valueOf(entry.getKey());
+                Long expiry = entry.getValue();
+                if (expiry != null && expiry > now) {
+                    timers.put(type, expiry);
+                }
+            } catch (IllegalArgumentException ignored) {}
         }
     }
 }

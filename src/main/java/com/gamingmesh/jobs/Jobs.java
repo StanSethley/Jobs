@@ -828,6 +828,12 @@ public final class Jobs extends JavaPlugin {
             System.out.println("There was some issues when starting plugin. Please contact dev about this. Plugin will be disabled.");
             setEnabled(false);
         }
+
+        dao.deleteExpiredBoosts();
+
+        for (Job job : Jobs.getJobs()) {
+            job.loadBoostsFromDB(dao);
+        }
         fullyLoaded = true;
         CMIMessages.consoleMessage(suffix);
     }
@@ -936,6 +942,12 @@ public final class Jobs extends JavaPlugin {
 
         dao.loadPlayerData();
 
+
+        dao.deleteExpiredBoosts();
+
+        for (Job job : Jobs.getJobs()) {
+            job.loadBoostsFromDB(dao);
+        }
         // Schedule
         if (getGCManager().enableSchedule) {
             try {
@@ -953,6 +965,13 @@ public final class Jobs extends JavaPlugin {
 
         CMIMessages.consoleMessage(prefix);
         HandlerList.unregisterAll(this);
+
+        // Save boosts BEFORE shutting DB connection
+        if (dao != null) {
+            for (Job job : Jobs.getJobs()) {
+                job.saveBoostsToDB(dao);
+            }
+        }
 
         if (dao != null && Jobs.getGeneralConfigManager().ExploreSaveIntoDatabase)
             dao.saveExplore();
