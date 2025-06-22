@@ -345,12 +345,22 @@ public abstract class JobsDAO {
     }
 
     public enum BoostsTableFields implements JobsTableInterface {
-        jobName("VARCHAR(100)"),
-        currencyType("VARCHAR(50)"),
-        amount("DOUBLE"),
-        expires("BIGINT");
+        jobName("varchar(32)") {
+            @Override
+            public boolean isUnique() {
+                return true;
+            }
+        },
+        currencyType("varchar(16)") {
+            @Override
+            public boolean isUnique() {
+                return true;
+            }
+        },
+        boost("double"),
+        expires("bigint");
 
-        private final String type;
+        private String type;
 
         BoostsTableFields(String type) {
             this.type = type;
@@ -368,11 +378,10 @@ public abstract class JobsDAO {
 
         @Override
         public boolean isUnique() {
-            // Return true for primary key columns if you want uniqueness constraints,
-            // or false otherwise. Usually handled separately in SQL.
             return false;
         }
     }
+
 
     public enum DBTables {
         JobNameTable("jobNames",
@@ -406,8 +415,25 @@ public abstract class JobsDAO {
             "CREATE TABLE IF NOT EXISTS `[tableName]` (`id` int NOT NULL AUTO_INCREMENT PRIMARY KEY[fields]);",
             "CREATE TABLE IF NOT EXISTS `[tableName]` (`id` INTEGER PRIMARY KEY AUTOINCREMENT[fields]);", PointsTableFields.class),
         BoostsTable("boosts",
-            "CREATE TABLE IF NOT EXISTS `[tableName]` (`id` int NOT NULL AUTO_INCREMENT PRIMARY KEY[fields]);",
-            "CREATE TABLE IF NOT EXISTS `[tableName]` (`id` INTEGER PRIMARY KEY AUTOINCREMENT[fields]);", BoostsTableFields.class);
+                // MySQL create table statement with UNIQUE constraint on (jobName, currencyType)
+                "CREATE TABLE IF NOT EXISTS `[tableName]` (" +
+                        "`id` int NOT NULL AUTO_INCREMENT PRIMARY KEY," +
+                        "`jobName` varchar(32) NOT NULL," +
+                        "`currencyType` varchar(16) NOT NULL," +
+                        "`boost` double," +
+                        "`expires` bigint," +
+                        "UNIQUE(`jobName`, `currencyType`)" +
+                        ");",
+                // SQLite create table statement with UNIQUE constraint on (jobName, currencyType)
+                "CREATE TABLE IF NOT EXISTS `[tableName]` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT," +
+                        "`jobName` varchar(32) NOT NULL," +
+                        "`currencyType` varchar(16) NOT NULL," +
+                        "`boost` double," +
+                        "`expires` bigint," +
+                        "UNIQUE(`jobName`, `currencyType`)" +
+                        ");",
+                BoostsTableFields.class);
 
         private String mySQL;
         private String sQlite;
