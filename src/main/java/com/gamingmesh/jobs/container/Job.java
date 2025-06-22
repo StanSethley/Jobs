@@ -178,7 +178,18 @@ public class Job {
             return;
         }
 
-        boost.add(type, point, System.currentTimeMillis() + (duration * 1000L));
+        long currentTime = System.currentTimeMillis();
+        Long existingTime = boost.getTime(type);
+        long newDuration = duration * 1000L;
+
+        if (existingTime != null && boost.isValid(type)) {
+            long remaining = existingTime - currentTime;
+            if (remaining > 0) {
+                newDuration += remaining;
+            }
+        }
+
+        boost.add(type, point, currentTime + newDuration);
     }
 
     public void setBoost(BoostMultiplier boost) {
