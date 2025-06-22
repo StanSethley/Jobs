@@ -2366,7 +2366,7 @@ public abstract class JobsDAO {
     public Map<CurrencyType, BoostData> loadJobBoosts(String jobName) {
         Map<CurrencyType, BoostData> boosts = new EnumMap<>(CurrencyType.class);
 
-        String query = "SELECT currencyType, amount, expires FROM boosts WHERE jobName = ?";
+        String query = "SELECT currencyType, boost, expires FROM boosts WHERE jobName = ?";
 
         try (PreparedStatement ps = getConnection().prepareStatement(query)) {
             ps.setString(1, jobName);
@@ -2374,7 +2374,7 @@ public abstract class JobsDAO {
                 while (rs.next()) {
                     String currencyName = rs.getString("currencyType");
                     CurrencyType currencyType = CurrencyType.valueOf(currencyName.toUpperCase());
-                    double amount = rs.getDouble("amount");
+                    double amount = rs.getDouble("boost");
                     long expires = rs.getLong("expires");
                     boosts.put(currencyType, new BoostData(amount, expires));
                 }
@@ -2389,8 +2389,8 @@ public abstract class JobsDAO {
     // Saves boost data for a job into DB (upsert)
     public void saveJobBoosts(String jobName, Map<CurrencyType, BoostData> boosts) {
         String insertOrUpdate =
-                "INSERT INTO boosts (jobName, currencyType, amount, expires) VALUES (?, ?, ?, ?) " +
-                        "ON CONFLICT(jobName, currencyType) DO UPDATE SET amount = excluded.amount, expires = excluded.expires";
+                "INSERT INTO boosts (jobName, currencyType, boost, expires) VALUES (?, ?, ?, ?) " +
+                        "ON CONFLICT(jobName, currencyType) DO UPDATE SET boost = excluded.boost, expires = excluded.expires";
 
         try (PreparedStatement ps = getConnection().prepareStatement(insertOrUpdate)) {
             for (Map.Entry<CurrencyType, BoostData> entry : boosts.entrySet()) {
